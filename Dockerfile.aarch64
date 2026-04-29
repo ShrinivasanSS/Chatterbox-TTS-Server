@@ -31,7 +31,7 @@ WORKDIR /app
 
 COPY requirements-nvidia-cu130.txt ./requirements-nvidia-cu130.txt
 
-RUN python3 -m pip install --upgrade pip && \
+RUN python3 -m pip config set global.break-system-packages true && \
     python3 -m pip install -r requirements-nvidia-cu130.txt && \
     python3 -m pip install --no-deps git+https://github.com/devnen/chatterbox-v2.git@master s3tokenizer==0.3.0 onnx==1.16.0 && \
     python3 -m pip install "protobuf>=4.25.0"
