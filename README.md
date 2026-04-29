@@ -570,6 +570,32 @@ See [README_CUDA128.md](README_CUDA128.md) for detailed setup instructions and t
 
 ---
 
+
+### **Option 2c: NVIDIA ARM64 (DGX Spark / aarch64)**
+
+For users running this server on **aarch64 NVIDIA systems** (for example DGX Spark).
+
+If you see errors like `nvrtc: error: invalid value for --gpu-architecture (-arch)`, use the dedicated ARM64 compose file below. It pins ARM64 CUDA runtime behavior and exposes overrides for NVRTC arch flags.
+
+```bash
+# Build + run the ARM64 image
+docker compose -f docker-compose-aarch64.yml up -d
+
+# Optional: if your device reports a different compute capability, override at launch
+TORCH_CUDA_ARCH_LIST=12.1 docker compose -f docker-compose-aarch64.yml up -d --build
+
+# Verify inside container
+docker compose -f docker-compose-aarch64.yml exec chatterbox-tts-server \
+  python -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0)); print(torch.cuda.get_arch_list())"
+```
+
+**Notes:**
+- `Dockerfile.aarch64` uses `linux/arm64` CUDA 13.0 base image and installs the cu130 PyTorch stack (`requirements-nvidia-cu130.txt`).
+- `TORCHINDUCTOR_DISABLE=1` is enabled by default to avoid problematic runtime JIT compilation paths seen on some ARM64 stacks.
+- You can override `TORCH_CUDA_ARCH_LIST` and `PYTORCH_NVRTC_FLAGS` from environment variables in `docker-compose-aarch64.yml`.
+
+---
+
 ### **Option 3: AMD GPU Installation (ROCm)**
 
 For users with modern, ROCm-compatible AMD GPUs.

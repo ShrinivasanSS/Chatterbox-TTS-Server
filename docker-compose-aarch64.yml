@@ -1,0 +1,33 @@
+services:
+  chatterbox-tts-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.aarch64
+    image: chatterbox-tts-server:aarch64
+    container_name: chatterbox-tts-server-aarch64
+    ports:
+      - "${PORT:-8004}:8004"
+    volumes:
+      - ./model_cache:/app/model_cache
+      - ./reference_audio:/app/reference_audio
+      - ./outputs:/app/outputs
+      - ./voices:/app/voices
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml
+      - ~/.cache/huggingface:/app/hf_cache
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-YOUR_TOKEN_HERE}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Override if your DGX Spark reports a different SM capability
+      - TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST:-12.1}
+      - PYTORCH_NVRTC_FLAGS=${PYTORCH_NVRTC_FLAGS:---gpu-architecture=compute_121}
+      - TORCHINDUCTOR_DISABLE=${TORCHINDUCTOR_DISABLE:-1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
