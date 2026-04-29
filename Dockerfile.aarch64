@@ -1,0 +1,43 @@
+FROM --platform=linux/arm64 docker.io/nvidia/cuda:13.0.1-runtime-ubuntu24.04
+
+# ARM64/NVIDIA build tuned for DGX Spark / Grace systems
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    HF_HOME=/app/hf_cache \
+    PIP_NO_CACHE_DIR=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    # Avoid runtime kernel JIT failures from unsupported default arch picks
+    TORCH_CUDA_ARCH_LIST="12.1" \
+    PYTORCH_NVRTC_FLAGS="--gpu-architecture=compute_121" \
+    # Fallback path to bypass problematic JIT compilation on some ARM64 setups
+    TORCHINDUCTOR_DISABLE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libsndfile1 \
+    ffmpeg \
+    python3 \
+    python3-pip \
+    python3-dev \
+    python3-venv \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+WORKDIR /app
+
+COPY requirements-nvidia-cu130.txt ./requirements-nvidia-cu130.txt
+
+RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install -r requirements-nvidia-cu130.txt && \
+    python3 -m pip install --no-deps git+https://github.com/devnen/chatterbox-v2.git@master s3tokenizer==0.3.0 onnx==1.16.0 && \
+    python3 -m pip install "protobuf>=4.25.0"
+
+COPY . .
+RUN mkdir -p model_cache reference_audio outputs voices logs hf_cache
+
+EXPOSE 8004
+CMD ["python3", "server.py"]
