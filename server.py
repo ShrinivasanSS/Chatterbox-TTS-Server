@@ -857,6 +857,7 @@ async def custom_tts_endpoint(
     )
     perf_monitor.record("TTS request received")
 
+    background_tasks.add_task(engine.maybe_cleanup_after_request)
     if not engine.MODEL_LOADED:
         logger.error("TTS request failed: Model not loaded.")
         raise HTTPException(
@@ -1272,29 +1273,29 @@ async def openai_voices_endpoint(model: str = ""):
 
 @app.post("/v1/audio/speech", tags=["OpenAI Compatible"])
 async def openai_speech_endpoint(request: OpenAISpeechRequest):
-    # Determine the audio prompt path based on the voice parameter
-    predefined_voices_path = get_predefined_voices_path(ensure_absolute=True)
-    reference_audio_path = get_reference_audio_path(ensure_absolute=True)
-    voice_path_predefined = predefined_voices_path / request.voice
-    voice_path_reference = reference_audio_path / request.voice
-
-    if voice_path_predefined.is_file():
-        audio_prompt_path = voice_path_predefined
-    elif voice_path_reference.is_file():
-        audio_prompt_path = voice_path_reference
-    else:
-        raise HTTPException(
-            status_code=404, detail=f"Voice file '{request.voice}' not found."
-        )
-
-    # Check if the TTS model is loaded
-    if not engine.MODEL_LOADED:
-        raise HTTPException(
-            status_code=503,
-            detail="TTS engine model is not currently loaded or available.",
-        )
-
     try:
+        # Determine the audio prompt path based on the voice parameter
+        predefined_voices_path = get_predefined_voices_path(ensure_absolute=True)
+        reference_audio_path = get_reference_audio_path(ensure_absolute=True)
+        voice_path_predefined = predefined_voices_path / request.voice
+        voice_path_reference = reference_audio_path / request.voice
+
+        if voice_path_predefined.is_file():
+            audio_prompt_path = voice_path_predefined
+        elif voice_path_reference.is_file():
+            audio_prompt_path = voice_path_reference
+        else:
+            raise HTTPException(
+                status_code=404, detail=f"Voice file '{request.voice}' not found."
+            )
+
+        # Check if the TTS model is loaded
+        if not engine.MODEL_LOADED:
+            raise HTTPException(
+                status_code=503,
+                detail="TTS engine model is not currently loaded or available.",
+            )
+
         seed_to_use = (
             request.seed if request.seed is not None else get_gen_default_seed()
         )
@@ -1418,6 +1419,8 @@ async def openai_speech_endpoint(request: OpenAISpeechRequest):
     except Exception as e:
         logger.error(f"Error in openai_speech_endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        engine.maybe_cleanup_after_request()
 
 
 # --- Main Execution ---

@@ -4,6 +4,8 @@
 import gc
 import logging
 import random
+import threading
+import time
 import numpy as np
 import torch
 from typing import Optional, Tuple
@@ -89,6 +91,8 @@ model_device: Optional[str] = (
 # Track which model type is loaded
 loaded_model_type: Optional[str] = None  # "original" or "turbo"
 loaded_model_class_name: Optional[str] = None  # "ChatterboxTTS" or "ChatterboxTurboTTS"
+_cleanup_lock = threading.Lock()
+_last_cleanup_ts: float = 0.0
 
 
 def set_seed(seed_value: int):
@@ -545,6 +549,60 @@ def reload_model() -> bool:
     # 6. Reload model from the (now updated) configuration
     logger.info("Memory cleared. Reloading model from updated config...")
     return load_model()
+
+
+def maybe_cleanup_after_request(force: bool = False) -> bool:
+    """
+    Opportunistically run GC and GPU cache cleanup with cooldown.
+    Intended to be called once after a full request (not per text chunk).
+
+    Args:
+        force: If True, run cleanup immediately regardless of cooldown.
+
+    Returns:
+        bool: True if cleanup ran, False if skipped due to cooldown/lock.
+    """
+    global _last_cleanup_ts
+
+    # Defaults are conservative to avoid latency spikes.
+    cleanup_enabled = config_manager.get_bool("memory_cleanup.enabled", True)
+    if not cleanup_enabled and not force:
+        return False
+
+    min_interval_sec = max(
+        0,
+        config_manager.get_int("memory_cleanup.min_interval_seconds", 45),
+    )
+    now = time.monotonic()
+
+    if not force and (now - _last_cleanup_ts) < min_interval_sec:
+        return False
+
+    # Non-blocking lock prevents stacked cleanups under concurrent traffic.
+    if not _cleanup_lock.acquire(blocking=False):
+        return False
+
+    try:
+        collected = gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if torch.backends.mps.is_available():
+            try:
+                torch.mps.empty_cache()
+            except AttributeError:
+                logger.debug("torch.mps.empty_cache() not available.")
+        _last_cleanup_ts = now
+        logger.debug(
+            "Post-request cleanup executed (collected=%s, force=%s).",
+            collected,
+            force,
+        )
+        return True
+    except Exception as e:
+        logger.warning("Post-request cleanup failed: %s", e, exc_info=True)
+        return False
+    finally:
+        _cleanup_lock.release()
 
 
 # --- End File: engine.py ---
